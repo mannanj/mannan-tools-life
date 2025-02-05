@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Popover } from "react-tiny-popover";
 import "./comments.css";
 
@@ -11,6 +11,8 @@ import {
   getThoughtContent,
   saveComments,
 } from "@/utilities/helpers";
+
+const QUEUE_MAX = 2;
 
 export const loadingSpinnerTiny: React.JSX.Element = (
   <div className="flex justify-center items-center">
@@ -27,17 +29,17 @@ const STARTER_COMMENTS: Comment[] = [
     loading: true,
   },
   {
-    original: "“Dont focus on techniques” I can totally do that",
+    original: "Dont focus on techniques” I can totally do that",
     transformed: loadingSpinnerTiny,
     id: "2",
-    loading: false,
+    loading: true,
   },
   {
     original:
       "Tried Jiu Jitsu for the first time 2 days ago. The feeling of being out of breath and just having another grown adult laying across my abdomen was probably one of the most uncomfortable physical feelings I've ever had. At one point I had to tap just to get a breath while the other guy was a black belt just patiently laying in side control.",
     transformed: loadingSpinnerTiny,
     id: "3",
-    loading: false,
+    loading: true,
   },
 ];
 
@@ -48,57 +50,48 @@ export interface Comment {
   loading: boolean;
   thinking?: string;
   processing?: boolean;
+  isThinking?: boolean;
 }
 const Comments = () => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [showOriginal, setShowOriginal] = useState<number[]>([]);
   const [showThinking, setShowThinking] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
-  const [chatResponse, setChatResponse] = useState<ChatResponse | null>(null);
 
   const chatDeepStream = async (messageStr: string, commentId?: string) => {
     const message = {
       role: "user",
-      //   content: messageStr ?? "Why is the sky blue?",
-      content: `${OPENER_USER_CHAT} 100% agreed. The fundamentals of BJJ that we learned 20 years ago are not the fundamentals of today. Movements, framing and finding the calmness during the fight should be the fundamentals of BJJ`,
+      content: `${OPENER_USER_CHAT} ${messageStr}`,
     };
     const messages = [message];
-    // console.log("\nsending messages:", messages);
     const response = await ollama.chat({
       model: "deepseek-r1:1.5b",
       messages,
       stream: true,
     });
     let fullResponse = "";
-    let thinkingResponse = "";
-    let outsideOfThinkingResponse = "";
-    for await (const part of response) {
+    for await (const part of response as AsyncIterable<ChatResponse>) {
       fullResponse += part.message.content;
-      setChatResponse({
-        ...part,
-        message: { ...part.message, content: fullResponse },
-      });
-      //   console.log("fullresponse", fullResponse);
-      //   thinkingResponse = getThoughtContent(fullResponse);
-      //   if (thinkingResponse && thinkingResponse.length > 0) {
-      //     console.log("set thinking respnse", thinkingResponse);
-      //     setComments((prevComments) =>
-      //       prevComments.map((c) =>
-      //         c.id === commentId ? { ...c, thinking: thinkingResponse } : c
-      //       )
-      //     );
-      //   }
       setComments((prevComments) =>
         prevComments.map((c) =>
-          c.id === commentId ? { ...c, thinking: fullResponse } : c
+          c.id === commentId
+            ? { ...c, thinking: fullResponse, isThinking: true }
+            : c
         )
       );
     }
-    outsideOfThinkingResponse = getTextAfterThink(fullResponse);
-    return outsideOfThinkingResponse;
+    const thinkingContent = getThoughtContent(fullResponse);
+    setComments((prevComments) =>
+      prevComments.map((c) =>
+        c.id === commentId
+          ? { ...c, thinking: thinkingContent, isThinking: false }
+          : c
+      )
+    );
+    return getTextAfterThink(fullResponse);
   };
 
-  const transformComment = async (comment: Comment) => {
+  const transformComment = useCallback(async (comment: Comment) => {
     const transformedContent = await chatDeepStream(
       comment.original,
       comment.id
@@ -114,10 +107,11 @@ const Comments = () => {
           : c
       )
     );
-  };
+  }, []);
 
   useEffect(() => {
     const processComments = async () => {
+      const processingQueue: Promise<void>[] = [];
       for (const comment of comments) {
         if (comment.loading && !comment.processing) {
           setComments((prevComments) =>
@@ -130,13 +124,23 @@ const Comments = () => {
                 : c
             )
           );
-          await transformComment(comment);
+          const processComment = async () => {
+            await transformComment(comment);
+          };
+          processingQueue.push(processComment());
+          if (processingQueue.length >= QUEUE_MAX) {
+            await Promise.all(processingQueue);
+            processingQueue.length = 0;
+          }
         }
+      }
+      if (processingQueue.length > 0) {
+        await Promise.all(processingQueue);
       }
     };
 
     processComments();
-  }, [comments]);
+  }, [comments, transformComment]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -189,17 +193,6 @@ const Comments = () => {
 
   return (
     <div>
-      <button
-        onClick={() => {
-          chatDeepStream("hello!");
-        }}
-        className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-lg shadow-md hover:from-blue-600 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-75 transition duration-300 ease-in-out transform hover:scale-105"
-      >
-        Talk Deep
-      </button>
-      {/* <p style={{ maxWidth: "75%" }}>
-        {chatResponse ? chatResponse.message.content : ""}
-      </p> */}
       <h3 className="text-md font-semibold mb-2">Comments</h3>
       <div className="max-h-96 overflow-y-auto overflow-x-auto text-sm">
         {comments.map((comment, index) => (
@@ -208,11 +201,15 @@ const Comments = () => {
               {comment.thinking && (
                 <Popover
                   isOpen={showThinking.includes(index)}
-                  positions={["left", "right", "top", "bottom"]}
+                  positions={["left"]}
                   content={
                     <div
                       className="ml-2 p-2 rounded text-xs border"
-                      style={{ maxWidth: "30%" }}
+                      style={{
+                        maxWidth: "150px",
+                        maxHeight: "150px",
+                        overflow: "auto",
+                      }}
                     >
                       {comment.thinking}
                     </div>
@@ -220,7 +217,7 @@ const Comments = () => {
                 >
                   <button
                     className={`text-white hover:text-orange-700 p-2 -m-2 text-sm ${
-                      showThinking.includes(index) ? "opacity-50" : ""
+                      showThinking.includes(index) ? "" : "opacity-50"
                     }`}
                     onClick={() => toggleThinking(index)}
                   >
@@ -228,24 +225,40 @@ const Comments = () => {
                   </button>
                 </Popover>
               )}
-              <div className="flex-grow">{comment.transformed}</div>
+              <div
+                className="flex-grow"
+                style={{
+                  width: "150px",
+                  maxWidth: "150px",
+                  maxHeight: "100px",
+                  overflow: "auto",
+                }}
+              >
+                {comment.transformed}
+              </div>
               <Popover
                 isOpen={showOriginal.includes(index)}
                 positions={["right"]}
                 content={
                   <div
                     className="ml-2 p-2 rounded text-xs border"
-                    style={{ maxWidth: "30%" }}
+                    style={{
+                      maxWidth: "150px",
+                      maxHeight: "150px",
+                      overflow: "auto",
+                    }}
                   >
                     Original: {comment.original}
                   </div>
                 }
               >
                 <button
-                  className="text-white hover:text-orange-700 p-2 -m-2 text-sm"
+                  className={`text-white hover:text-orange-700 p-2 -m-2 text-xl ${
+                    showOriginal.includes(index) ? "" : "opacity-50"
+                  }`}
                   onClick={() => toggleOriginals(index)}
                 >
-                  {showOriginal.includes(index) ? "x" : "➔"}
+                  ↺
                 </button>
               </Popover>
             </div>
