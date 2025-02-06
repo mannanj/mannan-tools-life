@@ -5,12 +5,13 @@ import { Popover } from "react-tiny-popover";
 import "./comments.css";
 
 import ollama, { ChatResponse } from "ollama/browser";
-import { OPENER_USER_CHAT } from "@/utilities/SAMPLE_DATA";
+import { COMMENT_TRANSFORMATION_SINGLE } from "@/utilities/SAMPLE_DATA";
 import {
   getTextAfterThink,
   getThoughtContent,
   saveComments,
 } from "@/utilities/helpers";
+import ElementPicker from "./picker";
 
 const QUEUE_MAX = 2;
 
@@ -58,10 +59,13 @@ const Comments = () => {
   const [showThinking, setShowThinking] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const chatDeepStream = async (messageStr: string, commentId?: string) => {
+  const transformCommentDeeply = async (
+    messageStr: string,
+    commentId?: string
+  ) => {
     const message = {
       role: "user",
-      content: `${OPENER_USER_CHAT} ${messageStr}`,
+      content: `${COMMENT_TRANSFORMATION_SINGLE} ${messageStr}`,
     };
     const messages = [message];
     const response = await ollama.chat({
@@ -91,8 +95,8 @@ const Comments = () => {
     return getTextAfterThink(fullResponse);
   };
 
-  const transformComment = useCallback(async (comment: Comment) => {
-    const transformedContent = await chatDeepStream(
+  const startCommentTransformation = useCallback(async (comment: Comment) => {
+    const transformedContent = await transformCommentDeeply(
       comment.original,
       comment.id
     );
@@ -125,7 +129,7 @@ const Comments = () => {
             )
           );
           const processComment = async () => {
-            await transformComment(comment);
+            await startCommentTransformation(comment);
           };
           processingQueue.push(processComment());
           if (processingQueue.length >= QUEUE_MAX) {
@@ -140,7 +144,7 @@ const Comments = () => {
     };
 
     processComments();
-  }, [comments, transformComment]);
+  }, [comments, startCommentTransformation]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -191,17 +195,62 @@ const Comments = () => {
     );
   }
 
+  const thinkingSection = (index: number, comment: Comment) => (
+    <Popover
+      isOpen={showThinking.includes(index)}
+      positions={["left"]}
+      content={
+        <div
+          className="ml-2 p-2 rounded text-xs border"
+          style={{
+            maxWidth: "150px",
+            maxHeight: "150px",
+            overflow: "auto",
+          }}
+        >
+          {comment.thinking}
+        </div>
+      }
+    >
+      <button
+        className={`text-white hover:text-orange-700 p-2 -m-2 text-sm ${
+          showThinking.includes(index) ? "" : "opacity-50"
+        }`}
+        onClick={() => toggleThinking(index)}
+      >
+        💡
+      </button>
+    </Popover>
+  );
+
   return (
-    <div>
-      <h3 className="text-md font-semibold mb-2">Comments</h3>
-      <div className="max-h-96 overflow-y-auto overflow-x-auto text-sm">
-        {comments.map((comment, index) => (
-          <div key={comment.id} className="mb-2 p-2 border rounded relative">
-            <div className="flex items-start gap-2">
-              {comment.thinking && (
+    <>
+      <ElementPicker
+        onSelect={(element, info) =>
+          console.log("picked element", element, "\n info", info)
+        }
+      />
+      <div>
+        <h3 className="text-md font-semibold mb-2">Comments</h3>
+        <div className="max-h-96 overflow-y-auto overflow-x-auto text-sm">
+          {comments.map((comment, index) => (
+            <div key={comment.id} className="mb-2 p-2 border rounded relative">
+              <div className="flex items-start gap-2">
+                {comment.thinking && thinkingSection(index, comment)}
+                <div
+                  className="flex-grow"
+                  style={{
+                    width: "150px",
+                    maxWidth: "150px",
+                    maxHeight: "100px",
+                    overflow: "auto",
+                  }}
+                >
+                  {comment.transformed}
+                </div>
                 <Popover
-                  isOpen={showThinking.includes(index)}
-                  positions={["left"]}
+                  isOpen={showOriginal.includes(index)}
+                  positions={["right"]}
                   content={
                     <div
                       className="ml-2 p-2 rounded text-xs border"
@@ -211,89 +260,52 @@ const Comments = () => {
                         overflow: "auto",
                       }}
                     >
-                      {comment.thinking}
+                      Original: {comment.original}
                     </div>
                   }
                 >
                   <button
-                    className={`text-white hover:text-orange-700 p-2 -m-2 text-sm ${
-                      showThinking.includes(index) ? "" : "opacity-50"
+                    className={`text-white hover:text-orange-700 p-2 -m-2 text-xl ${
+                      showOriginal.includes(index) ? "" : "opacity-50"
                     }`}
-                    onClick={() => toggleThinking(index)}
+                    onClick={() => toggleOriginals(index)}
                   >
-                    💡
+                    ↺
                   </button>
                 </Popover>
-              )}
-              <div
-                className="flex-grow"
-                style={{
-                  width: "150px",
-                  maxWidth: "150px",
-                  maxHeight: "100px",
-                  overflow: "auto",
-                }}
-              >
-                {comment.transformed}
               </div>
-              <Popover
-                isOpen={showOriginal.includes(index)}
-                positions={["right"]}
-                content={
-                  <div
-                    className="ml-2 p-2 rounded text-xs border"
-                    style={{
-                      maxWidth: "150px",
-                      maxHeight: "150px",
-                      overflow: "auto",
-                    }}
-                  >
-                    Original: {comment.original}
-                  </div>
-                }
-              >
-                <button
-                  className={`text-white hover:text-orange-700 p-2 -m-2 text-xl ${
-                    showOriginal.includes(index) ? "" : "opacity-50"
-                  }`}
-                  onClick={() => toggleOriginals(index)}
-                >
-                  ↺
-                </button>
-              </Popover>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
-      <div className="flex justify-end">
-        <button
-          onClick={() =>
-            saveComments(
-              comments.map((comment) => ({
-                ...comment,
-                transformed:
-                  typeof comment.transformed === "string"
-                    ? comment.transformed
-                    : "[React Element]",
-              }))
-            )
-          }
-          className="flex items-center text-md"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-4 w-4 ml-2"
-            viewBox="0 0 20 20"
-            fill="currentColor"
+        <div className="flex justify-end">
+          <button
+            onClick={() =>
+              saveComments(
+                comments.map((comment) => ({
+                  ...comment,
+                  transformed:
+                    typeof comment.transformed === "string"
+                      ? comment.transformed
+                      : "[React Element]",
+                }))
+              )
+            }
+            className="flex items-center text-sm"
           >
-            <path d="M17 3a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1h12a1 1 0 001-1V3zM9 15H7v-2h2v2zm4 0h-2v-2h2v2zm1-4H6V5h8v6z" />
-          </svg>
-          Save
-        </button>
-        {/* ...existing code... */}
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4 ml-2"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path d="M17 3a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1h12a1 1 0 001-1V3zM9 15H7v-2h2v2zm4 0h-2v-2h2v2zm1-4H6V5h8v6z" />
+            </svg>
+            Download
+          </button>
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 

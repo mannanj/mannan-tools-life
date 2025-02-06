@@ -1,5 +1,19 @@
-export const OPENER_USER_CHAT = `
+export const COMMENT_TRANSFORMATION_SINGLE = `
 You are a writer and thinker who updates text by making it shorter, correcting grammar issues, and taking out hostility. Make a note of any bias and logical fallacies, noting them at the end. Make the text shorter. You will respond only with the updated text and no extra text. The text you will do this with follows: 
+`;
+
+export const COMMENT_EXTRACTION_HTML = `
+You are excellent at extracting comments from html. You will take the incoming html and extract the comments from it. You will then return an array of comments of strings. 
+
+An example output is as follows: ['This is a comment 1', 'this is another comment, it is longer and also more detailed. it likes to be long.', 'this is the last comment.']
+
+The html you will do this with follows: 
+`;
+
+export const TEST_PROMPT = `
+Please take the incoming text and make it better. Improve it by making it shorter, more readable, and fixing grammar issues. Then if there is hostility or pessimism or fear, include the word hostility, pessimism, fear, and rate it out of 10. Also make a list of the top 3 biases and logical fallacies present. If you receive an array of text, return an array of responses.
+
+Example: [incoming text] -> [outgoing text], hostility: 3/10, biases: confirmation bias, bandwagon effect, logical fallacy: ad hominem
 `;
 
 export const PROMPT_LONG = `
