@@ -1,0 +1,20 @@
+{
+  "name": "Mannan Tools Life",
+  "description": "Tools for Life",
+  "version": "1.0",
+  "manifest_version": 3,
+  "action": {
+    "default_popup": "main.html",
+    "default_icon": "main.png"
+  },
+  "content_scripts": [
+    {
+      "js": ["scripts/content.js"],
+      "matches": [
+        "https://developer.chrome.com/docs/extensions/*",
+        "https://developer.chrome.com/docs/webstore/*",
+        "https://www.youtube.com/*"
+      ]
+    }
+  ]
+}
